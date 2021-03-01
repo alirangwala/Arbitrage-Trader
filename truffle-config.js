@@ -1,3 +1,5 @@
+require('dotenv').config()
+const HDWalletProvider = require('@truffle/hdwallet-provider')
 /**
  * Use this file to configure your truffle project. It's seeded with some
  * common settings for different networks and features like migrations,
@@ -56,6 +58,13 @@ module.exports = {
     // from: <address>,        // Account to send txs from (default: accounts[0])
     // websocket: true        // Enable EventEmitter interface for web3 (default: false)
     // },
+    mainnet: {
+      provider: () => new HDWalletProvider(
+        process.env.PRIVATE_KEY,
+        process.env.INFURA_URL,
+      ),
+      network_id:1
+    }
     // Useful for deploying to a public network.
     // NB: It's important to wrap the provider as a function.
     // ropsten: {

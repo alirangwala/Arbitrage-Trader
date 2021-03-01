@@ -3,16 +3,46 @@ pragma experimental ABIEncoderV2;
 
 import "@studydefi/money-legos/dydx/contracts/DydxFlashloanBase.sol";
 import "@studydefi/money-legos/dydx/contracts/ICallee.sol";
+import { KyberNetworkProxy as IKyberNetworkProxy } from '@studydefi/money-legos/kyber/contracts/KyberNetworkProxy.sol';
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./IUniswapV2Router01.sol"
+import "./IUniswapV2Router02.sol"
+import "./IWeth.sol"
 
-
-contract DydxFlashloaner is ICallee, DydxFlashloanBase {
-    struct MyCustomData {
-        address token;
+contract FlashLoan is ICallee, DydxFlashloanBase {
+  enum Direction { KyberToUniswap, UniswapToKyber}
+    struct ArbInfo {
+        Direction direction;
         uint256 repayAmount;
     }
 
+event NewArbitrage(
+  Direction direction,
+  uint profit,
+  uint date
+)
+
+IKyberNetworkProxy kyber;
+IUniswapV2Router02 uniswap;
+IWeth weth;
+IERC20 dai;
+address constant KYBER_ETH_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+address beneficiary;
+
+constructor(
+  address kyberAddress,
+  address uniswapAddress,
+  address wethAddress,
+  address daiAddresss,
+  address beneficiaryAddress
+) public {
+  kyber = IKyberNetworkProxy(kyberAddress);
+  uniswap = IUniswapV2Router02(uniswapAddress)
+  weth = IWeth(wethAdrress);
+  dai = IERC20(daiAddress);
+  beneficiary = beneficiaryAddress;
+}
     // This is the function that will be called postLoan
     // i.e. Encode the logic to handle your flashloaned funds here
     function callFunction(
@@ -20,24 +50,70 @@ contract DydxFlashloaner is ICallee, DydxFlashloanBase {
         Account.Info memory account,
         bytes memory data
     ) public {
-        MyCustomData memory mcd = abi.decode(data, (MyCustomData));
+        ArbInfo memory arbInfo = abi.decode(data, (ArbInfo));
         uint256 balOfLoanedToken = IERC20(mcd.token).balanceOf(address(this));
 
-        // Note that you can ignore the line below
-        // if your dydx account (this contract in this case)
-        // has deposited at least ~2 Wei of assets into the account
-        // to balance out the collaterization ratio
-        require(
-            balOfLoanedToken >= mcd.repayAmount,
-            "Not enough funds to repay dydx loan!"
+
+
+      if(arbInfo.direction == Direction.KyberToUniswap) {
+      // Buy ETH on Kyber
+      dai.approve(address(kyber),balanceDai);
+      (uint expectedRate, ) = kyber.getExpectedRate(
+        dai,
+        IERC20(KYBER_ETH_ADDRESS),
+        balanceDai
+      );
+      kyber.swapTokenToEther(dai, balanceDai, expectedRate);
+
+      // Sell ETH on Uniswap
+      address[] memory path = new adddress[](2);
+      path[0] = address(weth);
+      path[1] = address(dai);
+      uint [] memory monOuts = uniswap.getAmountsOut(address(this).balance, path )
+      uniswap.swapExactETHForTokens.value(address(this).balance) (
+        minOuts[1],
+        path,
+        address(this),
+        now
+      );
+      } else {
+        // Buy ETH on Uniswap
+        address[] memory path = new adddress[](2);
+        path[0] = address(weth);
+        path[1] = address(dai);
+        uint [] memory monOuts = uniswap.getAmountsOut(balanceDai, path )
+        uniswap.swapExactTokensForETH(
+          balanceDai,
+          minOuts[1]
+          path,
+          address(this),
+          now
         );
+      // Sell ETH on Kyber
+            dai.approve(address(kyber),balanceDai);
+      (uint expectedRate, ) = kyber.getExpectedRate(
+        IERC20(KYBER_ETH_ADDRESS),
+        dai,
+        address(this).balance
+      );
+      kyber.swapTokenToEther(address(this).balance)(
+        dai,
+        expectedRate
+      )
+      }
 
-        // TODO: Encode your logic here
-        // E.g. arbitrage, liquidate accounts, etc
-        revert("Hello, you haven't encoded your logic");
-    }
+      require(
+        dai.balanceOf(address(this)) >= arbInfo.repayAmount,
+        "Not enough funds to repay DyDx load!"
+      )
 
-    function initiateFlashLoan(address _solo, address _token, uint256 _amount)
+      uint profit = dai.balanceOf(address(this)) - arbInfo.repayAmount;
+      dai.transfer(beneficiary, profit)
+      emit NewArbitrage(arbInfo.direction, profit, now);
+
+}
+
+    function initiateFlashloan(address _solo, address _token, uint256 _amount, Direction _direction)
         external
     {
         ISoloMargin solo = ISoloMargin(_solo);
@@ -58,7 +134,7 @@ contract DydxFlashloaner is ICallee, DydxFlashloanBase {
         operations[0] = _getWithdrawAction(marketId, _amount);
         operations[1] = _getCallAction(
             // Encode MyCustomData for callFunction
-            abi.encode(MyCustomData({token: _token, repayAmount: repayAmount}))
+            abi.encode(ArbInfo({direction: _direction, repayAmount: repayAmount}))
         );
         operations[2] = _getDepositAction(marketId, repayAmount);
 
@@ -67,4 +143,6 @@ contract DydxFlashloaner is ICallee, DydxFlashloanBase {
 
         solo.operate(accountInfos, operations);
     }
+
+    function() external payable {}
 }
