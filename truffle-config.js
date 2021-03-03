@@ -61,7 +61,7 @@ module.exports = {
     mainnet: {
       provider: () => new HDWalletProvider(
         process.env.PRIVATE_KEY,
-        process.env.INFURA_URL,
+        process.env.INFURA_URL
       ),
       network_id:1
     }
