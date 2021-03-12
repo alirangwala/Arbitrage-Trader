@@ -6,9 +6,9 @@ import "@studydefi/money-legos/dydx/contracts/ICallee.sol";
 import { KyberNetworkProxy as IKyberNetworkProxy } from '@studydefi/money-legos/kyber/contracts/KyberNetworkProxy.sol';
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "./IUniswapV2Router01.sol"
-import "./IUniswapV2Router02.sol"
-import "./IWeth.sol"
+import "./IUniswapV2Router01.sol";
+import "./IUniswapV2Router02.sol";
+import "./IWeth.sol";
 
 contract FlashLoan is ICallee, DydxFlashloanBase {
   enum Direction { KyberToUniswap, UniswapToKyber}
@@ -21,7 +21,7 @@ event NewArbitrage(
   Direction direction,
   uint profit,
   uint date
-)
+);
 
 IKyberNetworkProxy kyber;
 IUniswapV2Router02 uniswap;
@@ -34,12 +34,12 @@ constructor(
   address kyberAddress,
   address uniswapAddress,
   address wethAddress,
-  address daiAddresss,
+  address daiAddress,
   address beneficiaryAddress
 ) public {
   kyber = IKyberNetworkProxy(kyberAddress);
-  uniswap = IUniswapV2Router02(uniswapAddress)
-  weth = IWeth(wethAdrress);
+  uniswap = IUniswapV2Router02(uniswapAddress);
+  weth = IWeth(wethAddress);
   dai = IERC20(daiAddress);
   beneficiary = beneficiaryAddress;
 }
@@ -51,7 +51,7 @@ constructor(
         bytes memory data
     ) public {
         ArbInfo memory arbInfo = abi.decode(data, (ArbInfo));
-        uint256 balOfLoanedToken = IERC20(mcd.token).balanceOf(address(this));
+        uint256 balanceDai = dai.balanceOf(address(this));
 
 
 
@@ -66,10 +66,10 @@ constructor(
       kyber.swapTokenToEther(dai, balanceDai, expectedRate);
 
       // Sell ETH on Uniswap
-      address[] memory path = new adddress[](2);
+      address[] memory path = new address[](2);
       path[0] = address(weth);
       path[1] = address(dai);
-      uint [] memory monOuts = uniswap.getAmountsOut(address(this).balance, path )
+      uint [] memory minOuts = uniswap.getAmountsOut(address(this).balance, path );
       uniswap.swapExactETHForTokens.value(address(this).balance) (
         minOuts[1],
         path,
@@ -78,13 +78,13 @@ constructor(
       );
       } else {
         // Buy ETH on Uniswap
-        address[] memory path = new adddress[](2);
+        address[] memory path = new address[](2);
         path[0] = address(weth);
         path[1] = address(dai);
-        uint [] memory monOuts = uniswap.getAmountsOut(balanceDai, path )
+        uint [] memory minOuts = uniswap.getAmountsOut(balanceDai, path );
         uniswap.swapExactTokensForETH(
           balanceDai,
-          minOuts[1]
+          minOuts[1],
           path,
           address(this),
           now
@@ -96,19 +96,20 @@ constructor(
         dai,
         address(this).balance
       );
-      kyber.swapTokenToEther(address(this).balance)(
+      kyber.swapTokenToEther(
         dai,
+        address(this).balance,
         expectedRate
-      )
+      );
       }
 
       require(
         dai.balanceOf(address(this)) >= arbInfo.repayAmount,
         "Not enough funds to repay DyDx load!"
-      )
+      );
 
       uint profit = dai.balanceOf(address(this)) - arbInfo.repayAmount;
-      dai.transfer(beneficiary, profit)
+      dai.transfer(beneficiary, profit);
       emit NewArbitrage(arbInfo.direction, profit, now);
 
 }
